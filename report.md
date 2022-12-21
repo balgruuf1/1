@@ -161,3 +161,84 @@
 
 ### 5.5. Making a list of routers
 * Run the dump command `tcpdump -tnv -i enp0s3` on r1<br>
+* Using the traceroute utility, we build a list of routers on the path from ws11 to ws21 with the command `traceroute 10.20.0.10 -n`<br>
+![traceroute on ws11](screen/5.32.png)<br>*traceroute on ws11*<br>
+![tcpdump on r1](screen/5.33.png)<br>*tcpdump on r1*<br>
+* How traceroute works:<br>
+* To identify intermediate routers, traceroute sends a series of data packets to the target node, each time increasing by 1 the value of the TTL ("lifetime") field. This usually results in a large number of routers that can be traversed by the packet. The first packet is sent with TTL, high speed 1, so the first response returns an ICMP message indicating that data cannot be delivered. Traceroute records the address of the router, as well as the time between sending a packet and receiving a response (you use this information on your computer monitor). Then traceroute repeats sending the packet, but with a TTL of size 2, which allows the first router to skip the packet further.<br>
+* The process is repeated until, when the TTL value is insufficient, the packet is absorbed by the target packet. Upon receiving a response from this packet, the tracing process is completed.<br>
+
+### 5.6. Using the ICMP protocol for routing
+* Run on r1 interception of network traffic passing through eth0 using the command `tcpdump -n -i eth0 icmp`<br>
+* Ping a non-existent IP from ws11 using the command `ping -c 1 10.30.0.111`<br>
+![Ping on ws11](screen/5.34.png)<br>*Ping on ws11*<br>
+![tcpdump on r1](screen/5.35.png)<br>*tcpdump on r1*<br>
+* We make a dump for each machine
+
+## Part 6. Dynamic IP configuration using DHCP
+* For r2, configure the configuration of the DHCP service in the file `/etc/dhcp/dhcpd.conf'<br>
+![dhcpd.conf on r2](screen/6.1.png)<br>*dhcpd.conf on r2*<br>
+* In the resolv.conf file we write `nameserver 8.8.8.8`<br>
+![resolv.conf on r2](screen/6.2.png)<br>*resolv.conf on r2*<br>
+* Restart the DHCP service with the command `systemctl restart isc-dhcp-server`<br>
+![DHCP reboot on r2](screen/6.3.png)<br>*Rebooting DHCP on r2*<br>
+* Reboot the ws21 machine using `reboot` and check via `ip a` that it has received the address<br>
+![Address on ws21](screen/6.4.png)<br>*Address on ws21*<br>
+* Ping ws22 with ws21<br>
+![Ping on ws21](screen/6.5.png)<br>*Ping on ws21*<br>
+* Specify the MAC address of ws11, for this in etc/netplan/00-installer-config.yaml should add the lines: `macaddress: 10:10:10:10:10: BA`, `dhcp4: true`<br>
+![Added MAC address to ws11](screen/6.6.png)<br>*Added MAC address to ws11*<br>
+* For r1, we configure it similarly to r2, but we issue addresses with a tight binding to the MAC address (ws11). We also do similar tests<br>
+![dhcpd.conf on r1](screen/6.7.png)<br>*dhcpd.conf on r1*<br>
+![resolv.conf on r1 and DHCP reboot](screen/6.8.png)<br>*resolv.conf on r1 and DHCP reboot*<br>
+![Address on ws11](screen/6.9.png)<br>*Address on ws11*<br>
+![Ping on ws11](screen/6.10.png)<br>*Ping on ws11*<br>
+* Calling 'ip a` on ws21, then requesting an ip update and calling `ip a' again<br>
+![IP update to ws21](screen/6.11.png)<br>*IP update on ws21*<br>
+* dhcilent uses the dynamic host configuration protocol to dynamically configure the network parameters of the network interface<br>
+* The name of the network interface that dhclient should try to configure can be specified on the command line. If the interface name is not specified on the command line, dhclient usually identifies all network interfaces, removes non-broadcast interfaces if possible, and tries to configure each interface<br>
+
+## Part 7. NAT
+* Install Apache2 with the command `sudo apt-install apache2'<br>
+* In the file `/etc/apache2/ports.conf` on ws22 and r1, we change the line Listen 80 to Listen 0.0.0.0:80, that is, we make the Apache2 server public<br>
+![Modified ports.conf](screen/7.1.png)<br>*Changed ports.conf*<br>
+* Launch the Apache web server with the command `service apache2 start` on ws22 and r1<br>
+![Running Apache on ws22](screen/7.2.png)<br>*Running Apache on ws22*<br>
+![Running Apache on r1](screen/7.3.png)<br>*Running Apache on r1*<br>
+* Add the following rules to the firewall created by analogy with the firewall from Part 4 on r2:<br>
+* 1) Deleting rules in the filter - iptables -F table<br>
+* 2) Deleting rules in the "NAT" table - iptables -F -t nat<br>
+* 3) Drop all routed packets - iptables --policy FORWARD DROP<br>
+![firewall.sh on r2](screen/7.4.png)<br>*firewall.sh on r2*<br>
+* Run the file the same way as in Part 4<br>
+![Launch firewall.sh on r2](screen/7.5.png)<br>*Launch firewall.sh on r2*<br>
+* Check the connection between ws22 and r1 with the `ping` command. When running a file with these rules, ws22 should not "ping" with r1<br>
+![Ping with r1](screen/7.6.png)<br>*Ping with r1*<br>
+![Ping with ws22](screen/7.7.png)<br>*Ping with ws22*<br>
+* We allow routing of all ICMP protocol packets<br>
+![firewall.sh](screen/7.8.png)<br>*firewall.sh*<br>
+* Check the connection between ws22 and r1 with the `ping` command. When running a file with these rules, ws22 should "ping" with r1<br>
+![Ping with ws22](screen/7.9.png)<br>*Ping with ws22*<br>
+![Ping with r1](screen/7.10.png)<br>*Ping with r1*<br>
+* Add two more rules to the file:<br>
+5) Enable SNAT, namely masking of all local ip from the local network located behind r2 (according to the designations from Part 5 - network 10.20.0.0)<br>
+6) Enable DNAT on the 8080 port of the r2 machine and add access from outside the network to the Apache web server running on ws22
+![firewall.sh](screen/7.11.png)<br>*firewall.sh*<br>
+* We check the TCP connection for SNAT, for this we connect to the Apache server on r1 from ws22 with the command: `telnet [address] [port]`<br>
+![telnet on ws22](screen/7.12.png)<br>*telnet on ws22*<br>
+* Check the TCP connection for DNAT, for this we connect to the Apache server on ws22 with the command `telnet`<br> from r1
+![telnet on r1](screen/7.13.png)<br>*telnet on r1*<br>
+
+## Part 8. Optional. Getting to Know SSH Tunnels
+* Launch a firewall on r2 with the rules from Part 7<br>
+* Running Apache web server on ws 22 only on localhost<br>
+![web server](screen/8.1.png)<br>*web server*<br>
+* Use Local TCP forwarding from ws21 to ws22 to access the web server on ws22 from ws21
+![local TCP](screen/8.2.png)<br>
+![local TCP](screen/8.3.png)<br>*Local TCP*<br>
+* Use Remote TCP forwarding from ws11 to ws22 to access the web server on ws22 from ws11<br>
+* Start with ws11 ssh -R remote_port:local_ip:local_port user@hostname<br>
+![Remote TCP](screen/8.4.png)<br>*Remote TCP*<br>
+* Let's check if the connection worked<br>
+![Telnet](screen/8.5.png)<br>
+![Telnet](screen/8.6.png)<br>*Telnet*<br>
